@@ -1,9 +1,0 @@
-go-api follows the Go - Build a Rest API with Golang video in Airplanes directory
-
-What is an API?
-It all comes down to client and server
-1. client makes get request to server
-2. server executes logic to return the data in json
-
-communciation happens through json
-
