@@ -13,6 +13,7 @@ go run main.go
 Open up Postman
 
 Creating a Person:
+create a new window
 click on POST
 Type in http://localhost:12345/person
 Body Tab
