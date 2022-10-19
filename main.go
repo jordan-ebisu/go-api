@@ -1,37 +1,107 @@
 package main
 
-type todo struct {
-	ID        string `json:"id"`
-	Item      string `json:"title"`
-	Completed bool   `json:"completed"`
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/gorilla/mux"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+)
+
+// Below is the data model
+type Person struct {
+	ID        primitive.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
+	Firstname string             `json:"firstname,omitempty" bson:"firstname,omitempty"`
+	Lastname  string             `json:"lastname,omitempty" bson:"lastname,omitempty"`
+	Email     string             `json:"email,omitempty" bson:"email,omitempty"`
 }
 
-var todos = []todo{
-	{ID: "1", Item: "Clean Room", Completed: false},
-	{ID: "2", Item: "Wash Dishes", Completed: false},
-	{ID: "3", Item: "Wash Clothes", Completed: false},
+var client *mongo.Client
+
+func CreatePersonEndpoint(response http.ResponseWriter, request *http.Request) {
+	response.Header().Set("content_type", "application/json")
+	var person Person
+	_ = json.NewDecoder(request.Body).Decode(&person)
+	collection := client.Database("mygoapi").Collection("people")
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	result, _ := collection.InsertOne(ctx, person)
+	json.NewEncoder(response).Encode(result)
+}
+func EditPersonEndpoint(response http.ResponseWriter, request *http.Request) {
+	response.Header().Set("content-type", "application/json")
+	params := mux.Vars(request)
+	id, _ := primitive.ObjectIDFromHex(params["id"])
+	filter := bson.D{{"_id", id}}
+	var person Person
+	_ = json.NewDecoder(request.Body).Decode(&person)
+	collection := client.Database("mygoapi").Collection("people")
+	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	result, err := collection.ReplaceOne(ctx, filter, person)
+	if err != nil {
+		response.WriteHeader(http.StatusInternalServerError)
+		response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+		return
+	}
+	json.NewEncoder(response).Encode(result)
+}
+func GetPeopleEndpoint(response http.ResponseWriter, request *http.Request) {
+	response.Header().Set("content-type", "application/json")
+	var people []Person
+	collection := client.Database("mygoapi").Collection("people")
+	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	cursor, err := collection.Find(ctx, bson.M{})
+	if err != nil {
+		response.WriteHeader(http.StatusInternalServerError)
+		response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+	}
+	defer cursor.Close(ctx)
+	for cursor.Next(ctx) {
+		var person Person
+		cursor.Decode(&person)
+		people = append(people, person)
+	}
+	if err := cursor.Err(); err != nil {
+		response.WriteHeader(http.StatusInternalServerError)
+		response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+		return
+	}
+	json.NewEncoder(response).Encode(people)
+}
+func GetPersonEndpoint(response http.ResponseWriter, request *http.Request) {
+	response.Header().Set("content-type", "application/json")
+	params := mux.Vars(request)
+	id, _ := primitive.ObjectIDFromHex(params["id"])
+	var person Person
+	collection := client.Database("mygoapi").Collection("people")
+	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	err := collection.FindOne(ctx, Person{ID: id}).Decode(&person)
+	if err != nil {
+		response.WriteHeader(http.StatusInternalServerError)
+		response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+		return
+	}
+	json.NewEncoder(response).Encode(person)
 }
 
 func main() {
-	// Create the server
-	router := gin.Default()
+	fmt.Println("Starting the application...")
 
-	// Create the endpoint
-	router.GET("/todos", getTodos)
-
-	// Start the server
-	router.Run("localhost:9090")
-
-}
-
-func gotTodos(context *gin.Context) {
-	context.IndentedJSON(http.StatusOk, todos)
-}
-
-func addTodo(context *gin.Context) {
-	var newTodo todo
-
-	if err := context.BindJSON(&newTodo); err != nil {
-		return
-	}
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
+	client, _ = mongo.Connect(ctx, clientOptions)
+	router := mux.NewRouter()
+	router.HandleFunc("/person", CreatePersonEndpoint).Methods("POST")
+	router.HandleFunc("/people", GetPeopleEndpoint).Methods("GET")
+	router.HandleFunc("/person/{id}", GetPersonEndpoint).Methods("GET")
+	// delete if not needed
+	router.HandleFunc("/person/{id}", EditPersonEndpoint).Methods("POST")
+	// delete if not needed
+	fmt.Println("Application is now running on port 12345")
+	http.ListenAndServe(":12345", router)
 }
