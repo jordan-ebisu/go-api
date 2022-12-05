@@ -1,6 +1,6 @@
 # Go-API
 
-This is a golang application that connects to MongoDB on the backend.
+This is a golang api application that connects to MongoDB on the backend.
 
 ## Running
 
